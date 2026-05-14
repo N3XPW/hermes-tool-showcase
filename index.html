@@ -91,41 +91,45 @@ const canvas = document.getElementById('canvas');
 const ctx = canvas.getContext('2d');
 let width, height;
 
-// Words to morph between
 const WORDS = ['HERMES', 'TOOLS', 'LIVE', 'DEPLOYED'];
-let currentWordIndex = 0;
+const PALETTES = [
+  ['#00f2ff', '#00c3ff', '#0099ff'],
+  ['#00ff88', '#00ffaa', '#88ffcc'],
+  ['#ffaa00', '#ff7700', '#ff4400'],
+  ['#ff00aa', '#ff00ff', '#aa00ff']
+];
+
+// State machine: 'HOLD' | 'MORPH'
+let state = 'HOLD';
+let wordIndex = 0;
 let nextWordIndex = 1;
 let morphProgress = 0;
-const MORPH_SPEED = 0.008;
-const HOLD_DURATION = 180; // frames to hold before morphing
-let holdCounter = 0;
+const HOLD_FRAMES = 220;   // ~3.6s at 60fps
+const MORPH_FRAMES = 150;  // ~2.5s morph duration
+let frameCounter = 0;
 
-// Particle system
+let wordPixels = [];       // Array of pixel positions per word
 let particles = [];
 const PARTICLE_COUNT = 2400;
-const MOUSE_RADIUS = 140;
-let mouse = { x: -9999, y: -9999 };
-
-// Color palettes
-const PALETTES = [
-  ['#00f2ff', '#00c3ff', '#0099ff'], // Cyan-Blue
-  ['#00ff88', '#00ffaa', '#88ffcc'], // Green
-  ['#ffaa00', '#ff7700', '#ff4400'], // Orange-Red
-  ['#ff00aa', '#ff00ff', '#aa00ff']  // Magenta-Purple
-];
+const MOUSE_RADIUS = 160;
+let mouse = { x: -9999, y: -9999, active: false };
 
 function resize() {
   width = canvas.width = window.innerWidth;
   height = canvas.height = window.innerHeight;
 }
-window.addEventListener('resize', resize);
+window.addEventListener('resize', () => {
+  resize();
+  cacheAllWords();
+  assignWordTargets(wordIndex);
+});
 resize();
 
-// Get text pixel positions
+// Get pixel positions for text (grid-sampled)
 function getTextPixels(text) {
   const tempCanvas = document.createElement('canvas');
   const tempCtx = tempCanvas.getContext('2d');
-  const fontSize = Math.min(width / 6, 140);
+  const fontSize = Math.min(width / 5.5, 160);
   tempCanvas.width = width;
   tempCanvas.height = height;
 
@@ -137,7 +141,7 @@ function getTextPixels(text) {
 
   const imageData = tempCtx.getImageData(0, 0, width, height);
   const pixels = [];
-  const step = Math.max(2, Math.floor(fontSize / 18));
+  const step = Math.max(3, Math.floor(fontSize / 20));
 
   for (let y = 0; y < height; y += step) {
     for (let x = 0; x < width; x += step) {
@@ -150,67 +154,128 @@ function getTextPixels(text) {
   return pixels;
 }
 
+function cacheAllWords() {
+  wordPixels = WORDS.map(w => getTextPixels(w));
+}
+
 class Particle {
   constructor() {
+    // Current position
     this.x = Math.random() * width;
     this.y = Math.random() * height;
+
+    // Velocity (very gentle)
     this.vx = 0;
     this.vy = 0;
-    this.targetX = this.x;
-    this.targetY = this.y;
-    this.size = Math.random() * 1.8 + 0.5;
-    this.friction = 0.92 + Math.random() * 0.04;
-    this.ease = 0.08 + Math.random() * 0.06;
+
+    // Anchors: where this particle sits in each word
+    this.homeX = this.x;
+    this.homeY = this.y;
+    this.nextX = this.x;
+    this.nextY = this.y;
+
+    // Idle drift anchor (for particles not matched to a letter pixel)
+    this.idleX = this.x;
+    this.idleY = this.y;
+    this.idlePhase = Math.random() * Math.PI * 2;
+
+    this.size = Math.random() * 1.2 + 0.4;
+    this.friction = 0.94;
+    this.ease = 0.035;       // very soft pull to target
     this.paletteIndex = Math.floor(Math.random() * 3);
+    this.breathOffset = Math.random() * Math.PI * 2;
   }
 
-  update() {
-    // Mouse repulsion
-    const dx = mouse.x - this.x;
-    const dy = mouse.y - this.y;
-    const dist = Math.sqrt(dx * dx + dy * dy);
-    if (dist < MOUSE_RADIUS) {
-      const force = (MOUSE_RADIUS - dist) / MOUSE_RADIUS;
-      this.vx -= (dx / dist) * force * 2.5;
-      this.vy -= (dy / dist) * force * 2.5;
+  // Assign this particle to specific pixel positions in two words
+  assign(homePixel, nextPixel) {
+    if (homePixel) {
+      this.homeX = homePixel.x;
+      this.homeY = homePixel.y;
+    }
+    if (nextPixel) {
+      this.nextX = nextPixel.x;
+      this.nextY = nextPixel.y;
+    }
+    // If one side is missing, fall back to the other
+    if (!homePixel) { this.homeX = this.nextX; this.homeY = this.nextY; }
+    if (!nextPixel) { this.nextX = this.homeX; this.nextY = this.homeY; }
+  }
+
+  // Set idle orbit for particles not used by current words
+  setIdle(cx, cy, angle, radius) {
+    this.idleX = cx + Math.cos(angle) * radius;
+    this.idleY = cy + Math.sin(angle) * radius;
+    // Also set as home so they don't fly in from random places
+    this.homeX = this.idleX;
+    this.homeY = this.idleY;
+    this.nextX = this.idleX;
+    this.nextY = this.idleY;
+  }
+
+  update(progress, isMorphing) {
+    // 1. Compute target based on state
+    let targetX, targetY;
+
+    if (isMorphing) {
+      // Linear interpolation between home and next
+      targetX = this.homeX + (this.nextX - this.homeX) * progress;
+      targetY = this.homeY + (this.nextY - this.homeY) * progress;
+    } else {
+      // Holding: gentle breathing around home position
+      const breath = Math.sin(Date.now() * 0.0015 + this.breathOffset) * 1.5;
+      targetX = this.homeX + breath;
+      targetY = this.homeY + breath;
     }
 
-    // Move towards target
-    this.vx += (this.targetX - this.x) * this.ease;
-    this.vy += (this.targetY - this.y) * this.ease;
+    // 2. Mouse repulsion (gentle)
+    const dx = this.x - mouse.x;
+    const dy = this.y - mouse.y;
+    const dist = Math.sqrt(dx * dx + dy * dy);
+    if (dist < MOUSE_RADIUS && dist > 0) {
+      const force = ((MOUSE_RADIUS - dist) / MOUSE_RADIUS) * 2.5;
+      this.vx += (dx / dist) * force;
+      this.vy += (dy / dist) * force;
+    }
 
+    // 3. Pull toward target
+    this.vx += (targetX - this.x) * this.ease;
+    this.vy += (targetY - this.y) * this.ease;
+
+    // 4. Apply friction (heavy damping = calm water, not rapids)
     this.vx *= this.friction;
     this.vy *= this.friction;
 
+    // 5. Move
     this.x += this.vx;
     this.y += this.vy;
   }
 
-  draw(ctx, palette) {
+  draw(ctx, palette, isMorphing) {
     const speed = Math.sqrt(this.vx * this.vx + this.vy * this.vy);
     const color = palette[this.paletteIndex % palette.length];
-    const alpha = Math.min(1, 0.3 + speed * 0.15);
 
+    // Brighter during morph, dimmer but visible while holding
+    let alpha = isMorphing ? 0.9 : 0.6;
+    if (speed > 2) alpha += 0.15;
+
+    // Core dot
     ctx.beginPath();
     ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
     ctx.fillStyle = color;
     ctx.globalAlpha = alpha;
     ctx.fill();
-    ctx.globalAlpha = 1;
 
-    // Glow for faster particles
-    if (speed > 3) {
-      ctx.beginPath();
-      ctx.arc(this.x, this.y, this.size * 3, 0, Math.PI * 2);
-      ctx.fillStyle = color;
-      ctx.globalAlpha = alpha * 0.15;
-      ctx.fill();
-      ctx.globalAlpha = 1;
-    }
+    // Soft glow for all particles
+    ctx.beginPath();
+    ctx.arc(this.x, this.y, this.size * 4, 0, Math.PI * 2);
+    ctx.fillStyle = color;
+    ctx.globalAlpha = alpha * 0.08;
+    ctx.fill();
+
+    ctx.globalAlpha = 1;
   }
 }
 
-// Initialize particles
 function initParticles() {
   particles = [];
   for (let i = 0; i < PARTICLE_COUNT; i++) {
@@ -218,110 +283,90 @@ function initParticles() {
   }
 }
 
-// Set targets from pixel positions
-function setTargets(pixelPositions) {
-  // Shuffle pixel positions for organic feel
-  const shuffled = [...pixelPositions].sort(() => Math.random() - 0.5);
+// One-time assignment: map particles to word pixel positions
+function assignWordTargets(fromIdx, toIdx) {
+  const fromPixels = wordPixels[fromIdx] || [];
+  const toPixels = wordPixels[toIdx] || [];
+
+  // Shuffle pixels so mapping looks organic
+  const shuffledFrom = [...fromPixels].sort(() => Math.random() - 0.5);
+  const shuffledTo = [...toPixels].sort(() => Math.random() - 0.5);
 
   for (let i = 0; i < particles.length; i++) {
-    if (i < shuffled.length) {
-      particles[i].targetX = shuffled[i].x;
-      particles[i].targetY = shuffled[i].y;
+    const p = particles[i];
+
+    if (i < shuffledFrom.length && i < shuffledTo.length) {
+      // Particle belongs to a letter pixel in both words
+      p.assign(shuffledFrom[i], shuffledTo[i]);
+    } else if (i < shuffledFrom.length) {
+      // Only in source word
+      p.assign(shuffledFrom[i], null);
+    } else if (i < shuffledTo.length) {
+      // Only in destination word
+      p.assign(null, shuffledTo[i]);
     } else {
-      // Extra particles orbit around text
-      const angle = Math.random() * Math.PI * 2;
-      const radius = 80 + Math.random() * 120;
-      particles[i].targetX = width / 2 + Math.cos(angle) * radius;
-      particles[i].targetY = height / 2 + Math.sin(angle) * radius;
+      // Excess particle -> idle orbit
+      const angle = (i / PARTICLE_COUNT) * Math.PI * 2;
+      const radius = 90 + Math.sin(i * 0.5) * 60;
+      p.setIdle(width / 2, height / 2, angle, radius);
     }
   }
 }
 
-// Cache pixel positions for all words
-const wordPixels = [];
-let cacheReady = false;
-
-function cacheAllWords() {
-  for (let i = 0; i < WORDS.length; i++) {
-    wordPixels[i] = getTextPixels(WORDS[i]);
-  }
-  cacheReady = true;
-}
-
-// Mouse tracking
+// Mouse / touch tracking
 canvas.addEventListener('mousemove', e => {
   mouse.x = e.clientX;
   mouse.y = e.clientY;
+  mouse.active = true;
 });
-canvas.addEventListener('mouseleave', () => {
-  mouse.x = -9999;
-  mouse.y = -9999;
-});
-
-// Touch support
+canvas.addEventListener('mouseleave', () => { mouse.active = false; });
 canvas.addEventListener('touchmove', e => {
   e.preventDefault();
   mouse.x = e.touches[0].clientX;
   mouse.y = e.touches[0].clientY;
+  mouse.active = true;
 });
-canvas.addEventListener('touchend', () => {
-  mouse.x = -9999;
-  mouse.y = -9999;
-});
+canvas.addEventListener('touchend', () => { mouse.active = false; });
 
 // Animation loop
 function animate() {
-  ctx.fillStyle = 'rgba(5, 5, 8, 0.35)';
+  // Trail effect: partial clear instead of full black
+  ctx.fillStyle = 'rgba(5, 5, 8, 0.45)';
   ctx.fillRect(0, 0, width, height);
 
-  if (!cacheReady) {
-    requestAnimationFrame(animate);
-    return;
-  }
+  const palette = PALETTES[wordIndex];
+  const isMorphing = state === 'MORPH';
 
-  // Morph timing
-  if (holdCounter < HOLD_DURATION) {
-    holdCounter++;
-  } else {
-    morphProgress += MORPH_SPEED;
+  if (isMorphing) {
+    morphProgress = Math.min(1, frameCounter / MORPH_FRAMES);
+    frameCounter++;
+
     if (morphProgress >= 1) {
-      morphProgress = 0;
-      holdCounter = 0;
-      currentWordIndex = nextWordIndex;
+      // Morph complete -> switch to next word
+      wordIndex = nextWordIndex;
       nextWordIndex = (nextWordIndex + 1) % WORDS.length;
-      setTargets(wordPixels[currentWordIndex]);
+      frameCounter = 0;
+      morphProgress = 0;
+      state = 'HOLD';
+      // Re-assign targets so current "home" becomes the new word
+      assignWordTargets(wordIndex, nextWordIndex);
+    }
+  } else {
+    // HOLD state
+    frameCounter++;
+    if (frameCounter >= HOLD_FRAMES) {
+      frameCounter = 0;
+      morphProgress = 0;
+      state = 'MORPH';
+      // Targets already assigned at end of last morph
     }
   }
 
-  // Interpolate between words during morph
-  const currentPixels = wordPixels[currentWordIndex];
-  const nextPixels = wordPixels[nextWordIndex];
+  particles.forEach(p => p.update(morphProgress, isMorphing));
+  particles.forEach(p => p.draw(ctx, palette, isMorphing));
 
-  if (morphProgress > 0 && currentPixels && nextPixels) {
-    const mixed = [];
-    const maxLen = Math.max(currentPixels.length, nextPixels.length);
-    for (let i = 0; i < maxLen; i++) {
-      const p1 = currentPixels[Math.min(i, currentPixels.length - 1)];
-      const p2 = nextPixels[Math.min(i, nextPixels.length - 1)];
-      mixed.push({
-        x: p1.x + (p2.x - p1.x) * morphProgress,
-        y: p1.y + (p2.y - p1.y) * morphProgress
-      });
-    }
-    setTargets(mixed);
-  } else if (currentPixels) {
-    setTargets(currentPixels);
-  }
-
-  const palette = PALETTES[currentWordIndex];
-
-  particles.forEach(p => {
-    p.update();
-    p.draw(ctx, palette);
-  });
-
-  // Subtle scanline overlay
-  ctx.fillStyle = 'rgba(255,255,255,0.02)';
+  // Subtle scanlines
+  ctx.fillStyle = 'rgba(255,255,255,0.015)';
   for (let y = 0; y < height; y += 4) {
     ctx.fillRect(0, y, width, 1);
   }
@@ -329,23 +374,12 @@ function animate() {
   requestAnimationFrame(animate);
 }
 
-// Start
-initParticles();
-// Small delay to ensure font metrics settle
+// Bootstrap
 cacheAllWords();
-setTargets(wordPixels[0]);
+initParticles();
+// First assignment: all particles start from their HERMES positions
+assignWordTargets(0, 1);
 animate();
-
-// Re-cache on resize
-window.addEventListener('resize', () => {
-  resize();
-  cacheAllWords();
-  currentWordIndex = 0;
-  nextWordIndex = 1;
-  morphProgress = 0;
-  holdCounter = 0;
-  setTargets(wordPixels[0]);
-});
 </script>
 </body>
 </html>
