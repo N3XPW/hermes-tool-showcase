@@ -10,20 +10,44 @@
     background: #050508;
     color: #e0e0e0;
     font-family: 'SF Mono', 'Fira Code', 'Courier New', monospace;
-    overflow: hidden;
-    width: 100vw; height: 100vh;
+    overflow-x: hidden;
+    width: 100vw;
+    min-height: 100vh;
   }
   canvas {
     display: block;
-    position: absolute;
+    position: fixed;
     top: 0; left: 0;
     z-index: 1;
   }
-  .overlay {
-    position: absolute;
-    bottom: 32px; left: 32px;
+  .ui-layer {
+    position: relative;
     z-index: 10;
     pointer-events: none;
+  }
+  .ui-layer > * {
+    pointer-events: auto;
+  }
+  .top-bar {
+    position: fixed;
+    top: 24px; right: 28px;
+    display: flex;
+    gap: 12px;
+    align-items: center;
+  }
+  .badge {
+    font-size: 0.65rem;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    padding: 4px 10px;
+    border: 1px solid rgba(255,255,255,0.15);
+    border-radius: 4px;
+    color: #aaa;
+    background: rgba(255,255,255,0.03);
+  }
+  .overlay {
+    position: fixed;
+    bottom: 32px; left: 32px;
   }
   .overlay h1 {
     font-size: 0.75rem;
@@ -51,42 +75,224 @@
     0%, 100% { opacity: 1; transform: scale(1); }
     50% { opacity: 0.5; transform: scale(0.8); }
   }
-  .top-bar {
-    position: absolute;
-    top: 24px; right: 28px;
-    z-index: 10;
-    display: flex;
-    gap: 12px;
-    align-items: center;
+
+  /* N8N Panel */
+  .n8n-panel {
+    position: fixed;
+    bottom: 32px;
+    right: 32px;
+    width: 380px;
+    background: rgba(8, 8, 14, 0.92);
+    border: 1px solid rgba(255,255,255,0.12);
+    border-radius: 12px;
+    padding: 20px;
+    backdrop-filter: blur(12px);
+    box-shadow: 0 8px 32px rgba(0,0,0,0.5);
+    transition: all 0.3s ease;
   }
-  .badge {
-    font-size: 0.65rem;
+  .n8n-panel.collapsed {
+    width: auto;
+    padding: 12px 20px;
+  }
+  .n8n-panel.collapsed .panel-body {
+    display: none;
+  }
+  .panel-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 16px;
+    cursor: pointer;
+  }
+  .panel-header h2 {
+    font-size: 0.8rem;
     letter-spacing: 0.15em;
     text-transform: uppercase;
-    padding: 4px 10px;
+    color: #00f2ff;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .panel-header .indicator {
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    background: #333;
+    transition: background 0.3s;
+  }
+  .panel-header .indicator.connected {
+    background: #00ff88;
+    box-shadow: 0 0 8px #00ff88;
+  }
+  .panel-header .indicator.error {
+    background: #ff4444;
+    box-shadow: 0 0 8px #ff4444;
+  }
+  .panel-header .indicator.loading {
+    background: #ffaa00;
+    box-shadow: 0 0 8px #ffaa00;
+    animation: pulse 1s infinite;
+  }
+  .toggle-btn {
+    background: none;
+    border: none;
+    color: #888;
+    font-size: 1rem;
+    cursor: pointer;
+    padding: 0 4px;
+  }
+  .input-group {
+    margin-bottom: 12px;
+  }
+  .input-group label {
+    display: block;
+    font-size: 0.7rem;
+    color: #888;
+    margin-bottom: 6px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+  }
+  .input-group input {
+    width: 100%;
+    background: rgba(255,255,255,0.05);
     border: 1px solid rgba(255,255,255,0.15);
-    border-radius: 4px;
-    color: #aaa;
+    border-radius: 6px;
+    padding: 10px 12px;
+    color: #e0e0e0;
+    font-family: inherit;
+    font-size: 0.85rem;
+    outline: none;
+    transition: border-color 0.2s;
+  }
+  .input-group input:focus {
+    border-color: #00f2ff;
+  }
+  .input-group input::placeholder {
+    color: #555;
+  }
+  .btn-send {
+    width: 100%;
+    background: linear-gradient(135deg, #00f2ff 0%, #0099ff 100%);
+    border: none;
+    border-radius: 6px;
+    padding: 12px;
+    color: #050508;
+    font-family: inherit;
+    font-size: 0.8rem;
+    font-weight: bold;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    cursor: pointer;
+    transition: all 0.2s;
+    margin-bottom: 16px;
+  }
+  .btn-send:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 4px 20px rgba(0, 242, 255, 0.3);
+  }
+  .btn-send:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+    transform: none;
+  }
+  .response-panel {
     background: rgba(255,255,255,0.03);
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 8px;
+    padding: 12px;
+    min-height: 60px;
+  }
+  .response-panel label {
+    display: block;
+    font-size: 0.65rem;
+    color: #666;
+    margin-bottom: 8px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+  }
+  .response-content {
+    font-size: 0.8rem;
+    color: #ccc;
+    line-height: 1.5;
+    max-height: 200px;
+    overflow-y: auto;
+    word-break: break-word;
+  }
+  .response-content .key {
+    color: #00f2ff;
+  }
+  .response-content .string {
+    color: #00ff88;
+  }
+  .response-content .number {
+    color: #ffaa00;
+  }
+  .response-content .boolean {
+    color: #ff00aa;
+  }
+  .response-content pre {
+    white-space: pre-wrap;
+    word-wrap: break-word;
+  }
+  .empty-state {
+    color: #555;
+    font-style: italic;
+    font-size: 0.8rem;
+  }
+  .error-state {
+    color: #ff4444;
+    font-size: 0.8rem;
+  }
+  .success-state {
+    color: #00ff88;
+    font-size: 0.8rem;
   }
 </style>
 </head>
 <body>
   <canvas id="canvas"></canvas>
-  <div class="top-bar">
-    <div class="badge">Hermes v1.0</div>
-    <div class="badge">Git ✓</div>
-    <div class="badge">Vercel ✓</div>
-  </div>
-  <div class="overlay">
-    <h1>System Status</h1>
-    <div class="status-line"><div class="dot"></div> GitHub Repository verbunden</div>
-    <div class="status-line"><div class="dot"></div> Vercel Edge Network aktiv</div>
-    <div class="status-line"><div class="dot"></div> Animation-Engine — 60 FPS</div>
-    <div class="status-line"><div class="dot"></div> Alle Tools operational</div>
+
+  <div class="ui-layer">
+    <div class="top-bar">
+      <div class="badge">Hermes v1.1</div>
+      <div class="badge">Git ✓</div>
+      <div class="badge">Vercel ✓</div>
+      <div class="badge">n8n ✓</div>
+    </div>
+
+    <div class="overlay">
+      <h1>System Status</h1>
+      <div class="status-line"><div class="dot"></div> GitHub Repository verbunden</div>
+      <div class="status-line"><div class="dot"></div> Vercel Edge Network aktiv</div>
+      <div class="status-line"><div class="dot"></div> n8n Workflow bereit</div>
+      <div class="status-line"><div class="dot"></div> Animation-Engine — 60 FPS</div>
+      <div class="status-line"><div class="dot"></div> Alle Tools operational</div>
+    </div>
+
+    <div class="n8n-panel" id="n8nPanel">
+      <div class="panel-header" onclick="togglePanel()">
+        <h2>n8n Webhook <span class="indicator" id="statusIndicator"></span></h2>
+        <button class="toggle-btn" id="toggleBtn">▼</button>
+      </div>
+      <div class="panel-body">
+        <div class="input-group">
+          <label>Deine Nachricht an n8n</label>
+          <input type="text" id="messageInput" placeholder="z.B. Hallo von der Website!" value="Hermes Tools Showcase Test">
+        </div>
+        <button class="btn-send" id="sendBtn" onclick="sendToN8N()">An n8n senden</button>
+        <div class="response-panel">
+          <label>Response von n8n (JavaScript-Verarbeitung)</label>
+          <div class="response-content" id="responseContent">
+            <div class="empty-state">Noch keine Daten gesendet. Klicke den Button oben ↑</div>
+          </div>
+        </div>
+      </div>
+    </div>
   </div>
 
 <script>
+/* ============================
+   PARTICLE MORPHING ANIMATION
+   ============================ */
 const canvas = document.getElementById('canvas');
 const ctx = canvas.getContext('2d');
 let width, height;
@@ -99,16 +305,15 @@ const PALETTES = [
   ['#ff00aa', '#ff00ff', '#aa00ff']
 ];
 
-// State machine: 'HOLD' | 'MORPH'
 let state = 'HOLD';
 let wordIndex = 0;
 let nextWordIndex = 1;
 let morphProgress = 0;
-const HOLD_FRAMES = 220;   // ~3.6s at 60fps
-const MORPH_FRAMES = 150;  // ~2.5s morph duration
+const HOLD_FRAMES = 220;
+const MORPH_FRAMES = 150;
 let frameCounter = 0;
 
-let wordPixels = [];       // Array of pixel positions per word
+let wordPixels = [];
 let particles = [];
 const PARTICLE_COUNT = 2400;
 const MOUSE_RADIUS = 160;
@@ -125,7 +330,6 @@ window.addEventListener('resize', () => {
 });
 resize();
 
-// Get pixel positions for text (grid-sampled)
 function getTextPixels(text) {
   const tempCanvas = document.createElement('canvas');
   const tempCtx = tempCanvas.getContext('2d');
@@ -160,33 +364,24 @@ function cacheAllWords() {
 
 class Particle {
   constructor() {
-    // Current position
     this.x = Math.random() * width;
     this.y = Math.random() * height;
-
-    // Velocity (very gentle)
     this.vx = 0;
     this.vy = 0;
-
-    // Anchors: where this particle sits in each word
     this.homeX = this.x;
     this.homeY = this.y;
     this.nextX = this.x;
     this.nextY = this.y;
-
-    // Idle drift anchor (for particles not matched to a letter pixel)
     this.idleX = this.x;
     this.idleY = this.y;
     this.idlePhase = Math.random() * Math.PI * 2;
-
     this.size = Math.random() * 1.2 + 0.4;
     this.friction = 0.94;
-    this.ease = 0.035;       // very soft pull to target
+    this.ease = 0.035;
     this.paletteIndex = Math.floor(Math.random() * 3);
     this.breathOffset = Math.random() * Math.PI * 2;
   }
 
-  // Assign this particle to specific pixel positions in two words
   assign(homePixel, nextPixel) {
     if (homePixel) {
       this.homeX = homePixel.x;
@@ -196,16 +391,13 @@ class Particle {
       this.nextX = nextPixel.x;
       this.nextY = nextPixel.y;
     }
-    // If one side is missing, fall back to the other
     if (!homePixel) { this.homeX = this.nextX; this.homeY = this.nextY; }
     if (!nextPixel) { this.nextX = this.homeX; this.nextY = this.homeY; }
   }
 
-  // Set idle orbit for particles not used by current words
   setIdle(cx, cy, angle, radius) {
     this.idleX = cx + Math.cos(angle) * radius;
     this.idleY = cy + Math.sin(angle) * radius;
-    // Also set as home so they don't fly in from random places
     this.homeX = this.idleX;
     this.homeY = this.idleY;
     this.nextX = this.idleX;
@@ -213,21 +405,17 @@ class Particle {
   }
 
   update(progress, isMorphing) {
-    // 1. Compute target based on state
     let targetX, targetY;
 
     if (isMorphing) {
-      // Linear interpolation between home and next
       targetX = this.homeX + (this.nextX - this.homeX) * progress;
       targetY = this.homeY + (this.nextY - this.homeY) * progress;
     } else {
-      // Holding: gentle breathing around home position
       const breath = Math.sin(Date.now() * 0.0015 + this.breathOffset) * 1.5;
       targetX = this.homeX + breath;
       targetY = this.homeY + breath;
     }
 
-    // 2. Mouse repulsion (gentle)
     const dx = this.x - mouse.x;
     const dy = this.y - mouse.y;
     const dist = Math.sqrt(dx * dx + dy * dy);
@@ -237,15 +425,12 @@ class Particle {
       this.vy += (dy / dist) * force;
     }
 
-    // 3. Pull toward target
     this.vx += (targetX - this.x) * this.ease;
     this.vy += (targetY - this.y) * this.ease;
 
-    // 4. Apply friction (heavy damping = calm water, not rapids)
     this.vx *= this.friction;
     this.vy *= this.friction;
 
-    // 5. Move
     this.x += this.vx;
     this.y += this.vy;
   }
@@ -253,19 +438,15 @@ class Particle {
   draw(ctx, palette, isMorphing) {
     const speed = Math.sqrt(this.vx * this.vx + this.vy * this.vy);
     const color = palette[this.paletteIndex % palette.length];
-
-    // Brighter during morph, dimmer but visible while holding
     let alpha = isMorphing ? 0.9 : 0.6;
     if (speed > 2) alpha += 0.15;
 
-    // Core dot
     ctx.beginPath();
     ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
     ctx.fillStyle = color;
     ctx.globalAlpha = alpha;
     ctx.fill();
 
-    // Soft glow for all particles
     ctx.beginPath();
     ctx.arc(this.x, this.y, this.size * 4, 0, Math.PI * 2);
     ctx.fillStyle = color;
@@ -283,29 +464,21 @@ function initParticles() {
   }
 }
 
-// One-time assignment: map particles to word pixel positions
 function assignWordTargets(fromIdx, toIdx) {
   const fromPixels = wordPixels[fromIdx] || [];
   const toPixels = wordPixels[toIdx] || [];
-
-  // Shuffle pixels so mapping looks organic
   const shuffledFrom = [...fromPixels].sort(() => Math.random() - 0.5);
   const shuffledTo = [...toPixels].sort(() => Math.random() - 0.5);
 
   for (let i = 0; i < particles.length; i++) {
     const p = particles[i];
-
     if (i < shuffledFrom.length && i < shuffledTo.length) {
-      // Particle belongs to a letter pixel in both words
       p.assign(shuffledFrom[i], shuffledTo[i]);
     } else if (i < shuffledFrom.length) {
-      // Only in source word
       p.assign(shuffledFrom[i], null);
     } else if (i < shuffledTo.length) {
-      // Only in destination word
       p.assign(null, shuffledTo[i]);
     } else {
-      // Excess particle -> idle orbit
       const angle = (i / PARTICLE_COUNT) * Math.PI * 2;
       const radius = 90 + Math.sin(i * 0.5) * 60;
       p.setIdle(width / 2, height / 2, angle, radius);
@@ -313,7 +486,6 @@ function assignWordTargets(fromIdx, toIdx) {
   }
 }
 
-// Mouse / touch tracking
 canvas.addEventListener('mousemove', e => {
   mouse.x = e.clientX;
   mouse.y = e.clientY;
@@ -328,9 +500,7 @@ canvas.addEventListener('touchmove', e => {
 });
 canvas.addEventListener('touchend', () => { mouse.active = false; });
 
-// Animation loop
 function animate() {
-  // Trail effect: partial clear instead of full black
   ctx.fillStyle = 'rgba(5, 5, 8, 0.45)';
   ctx.fillRect(0, 0, width, height);
 
@@ -340,32 +510,26 @@ function animate() {
   if (isMorphing) {
     morphProgress = Math.min(1, frameCounter / MORPH_FRAMES);
     frameCounter++;
-
     if (morphProgress >= 1) {
-      // Morph complete -> switch to next word
       wordIndex = nextWordIndex;
       nextWordIndex = (nextWordIndex + 1) % WORDS.length;
       frameCounter = 0;
       morphProgress = 0;
       state = 'HOLD';
-      // Re-assign targets so current "home" becomes the new word
       assignWordTargets(wordIndex, nextWordIndex);
     }
   } else {
-    // HOLD state
     frameCounter++;
     if (frameCounter >= HOLD_FRAMES) {
       frameCounter = 0;
       morphProgress = 0;
       state = 'MORPH';
-      // Targets already assigned at end of last morph
     }
   }
 
   particles.forEach(p => p.update(morphProgress, isMorphing));
   particles.forEach(p => p.draw(ctx, palette, isMorphing));
 
-  // Subtle scanlines
   ctx.fillStyle = 'rgba(255,255,255,0.015)';
   for (let y = 0; y < height; y += 4) {
     ctx.fillRect(0, y, width, 1);
@@ -374,12 +538,105 @@ function animate() {
   requestAnimationFrame(animate);
 }
 
-// Bootstrap
 cacheAllWords();
 initParticles();
-// First assignment: all particles start from their HERMES positions
 assignWordTargets(0, 1);
 animate();
+
+/* ============================
+   N8N WEBHOOK INTEGRATION
+   ============================ */
+const N8N_WEBHOOK = 'https://n8n.srv1287837.hstgr.cloud/webhook-test/hermes-showcase';
+
+function togglePanel() {
+  const panel = document.getElementById('n8nPanel');
+  const btn = document.getElementById('toggleBtn');
+  panel.classList.toggle('collapsed');
+  btn.textContent = panel.classList.contains('collapsed') ? '▲' : '▼';
+}
+
+function setIndicator(status) {
+  const ind = document.getElementById('statusIndicator');
+  ind.className = 'indicator ' + status;
+}
+
+function syntaxHighlight(json) {
+  if (!json) return '';
+  const str = JSON.stringify(json, null, 2);
+  return str
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/(".*?")(\s*:\s*)/g, '<span class="key">$1</span>$2')
+    .replace(/: (".*?")/g, ': <span class="string">$1</span>')
+    .replace(/: (\d+)/g, ': <span class="number">$1</span>')
+    .replace(/: (true|false)/g, ': <span class="boolean">$1</span>');
+}
+
+async function sendToN8N() {
+  const input = document.getElementById('messageInput');
+  const btn = document.getElementById('sendBtn');
+  const responseContent = document.getElementById('responseContent');
+  const message = input.value.trim() || 'Testnachricht von Hermes';
+
+  btn.disabled = true;
+  btn.textContent = 'Sende an n8n...';
+  setIndicator('loading');
+  responseContent.innerHTML = '<div class="empty-state">Verbinde mit n8n Workflow...</div>';
+
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 15000);
+
+    const response = await fetch(N8N_WEBHOOK, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ message }),
+      signal: controller.signal
+    });
+
+    clearTimeout(timeoutId);
+
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+    }
+
+    const data = await response.json();
+
+    setIndicator('connected');
+    responseContent.innerHTML = `<pre>${syntaxHighlight(data)}</pre>`;
+    btn.textContent = 'Erfolgreich gesendet! ✓';
+    setTimeout(() => {
+      btn.textContent = 'An n8n senden';
+      btn.disabled = false;
+    }, 2000);
+
+  } catch (err) {
+    setIndicator('error');
+    console.error('n8n Error:', err);
+
+    let errorMsg = err.message;
+    if (err.name === 'AbortError') {
+      errorMsg = 'Timeout: n8n hat nicht rechtzeitig geantwortet (15s)';
+    } else if (err.message.includes('Failed to fetch')) {
+      errorMsg = 'CORS / Netzwerk-Fehler: Die Verbindung zu n8n wurde blockiert. Mögliche Lösungen: n8n auf HTTPS mit gültigem Zertifikat prüfen, oder CORS-Header konfigurieren.';
+    }
+
+    responseContent.innerHTML = `<div class="error-state">❌ Fehler: ${errorMsg}</div>`;
+    btn.textContent = 'Fehler — Retry?';
+    btn.disabled = false;
+  }
+}
+
+// Initial status check
+document.addEventListener('DOMContentLoaded', () => {
+  setIndicator('');
+});
+
+// Allow Enter key to submit
+document.getElementById('messageInput').addEventListener('keypress', (e) => {
+  if (e.key === 'Enter') sendToN8N();
+});
 </script>
 </body>
 </html>
