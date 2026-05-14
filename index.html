@@ -1,0 +1,351 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Hermes Tools — Live Showcase</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #050508;
+    color: #e0e0e0;
+    font-family: 'SF Mono', 'Fira Code', 'Courier New', monospace;
+    overflow: hidden;
+    width: 100vw; height: 100vh;
+  }
+  canvas {
+    display: block;
+    position: absolute;
+    top: 0; left: 0;
+    z-index: 1;
+  }
+  .overlay {
+    position: absolute;
+    bottom: 32px; left: 32px;
+    z-index: 10;
+    pointer-events: none;
+  }
+  .overlay h1 {
+    font-size: 0.75rem;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    color: #888;
+    margin-bottom: 8px;
+  }
+  .status-line {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 0.85rem;
+    margin-bottom: 4px;
+    opacity: 0.7;
+  }
+  .dot {
+    width: 6px; height: 6px;
+    border-radius: 50%;
+    background: #00ff88;
+    box-shadow: 0 0 6px #00ff88;
+    animation: pulse 2s ease-in-out infinite;
+  }
+  @keyframes pulse {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50% { opacity: 0.5; transform: scale(0.8); }
+  }
+  .top-bar {
+    position: absolute;
+    top: 24px; right: 28px;
+    z-index: 10;
+    display: flex;
+    gap: 12px;
+    align-items: center;
+  }
+  .badge {
+    font-size: 0.65rem;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    padding: 4px 10px;
+    border: 1px solid rgba(255,255,255,0.15);
+    border-radius: 4px;
+    color: #aaa;
+    background: rgba(255,255,255,0.03);
+  }
+</style>
+</head>
+<body>
+  <canvas id="canvas"></canvas>
+  <div class="top-bar">
+    <div class="badge">Hermes v1.0</div>
+    <div class="badge">Git ✓</div>
+    <div class="badge">Vercel ✓</div>
+  </div>
+  <div class="overlay">
+    <h1>System Status</h1>
+    <div class="status-line"><div class="dot"></div> GitHub Repository verbunden</div>
+    <div class="status-line"><div class="dot"></div> Vercel Edge Network aktiv</div>
+    <div class="status-line"><div class="dot"></div> Animation-Engine — 60 FPS</div>
+    <div class="status-line"><div class="dot"></div> Alle Tools operational</div>
+  </div>
+
+<script>
+const canvas = document.getElementById('canvas');
+const ctx = canvas.getContext('2d');
+let width, height;
+
+// Words to morph between
+const WORDS = ['HERMES', 'TOOLS', 'LIVE', 'DEPLOYED'];
+let currentWordIndex = 0;
+let nextWordIndex = 1;
+let morphProgress = 0;
+const MORPH_SPEED = 0.008;
+const HOLD_DURATION = 180; // frames to hold before morphing
+let holdCounter = 0;
+
+// Particle system
+let particles = [];
+const PARTICLE_COUNT = 2400;
+const MOUSE_RADIUS = 140;
+let mouse = { x: -9999, y: -9999 };
+
+// Color palettes
+const PALETTES = [
+  ['#00f2ff', '#00c3ff', '#0099ff'], // Cyan-Blue
+  ['#00ff88', '#00ffaa', '#88ffcc'], // Green
+  ['#ffaa00', '#ff7700', '#ff4400'], // Orange-Red
+  ['#ff00aa', '#ff00ff', '#aa00ff']  // Magenta-Purple
+];
+
+function resize() {
+  width = canvas.width = window.innerWidth;
+  height = canvas.height = window.innerHeight;
+}
+window.addEventListener('resize', resize);
+resize();
+
+// Get text pixel positions
+function getTextPixels(text) {
+  const tempCanvas = document.createElement('canvas');
+  const tempCtx = tempCanvas.getContext('2d');
+  const fontSize = Math.min(width / 6, 140);
+  tempCanvas.width = width;
+  tempCanvas.height = height;
+
+  tempCtx.font = `bold ${fontSize}px "SF Mono", "Fira Code", "Courier New", monospace`;
+  tempCtx.fillStyle = '#fff';
+  tempCtx.textAlign = 'center';
+  tempCtx.textBaseline = 'middle';
+  tempCtx.fillText(text, width / 2, height / 2);
+
+  const imageData = tempCtx.getImageData(0, 0, width, height);
+  const pixels = [];
+  const step = Math.max(2, Math.floor(fontSize / 18));
+
+  for (let y = 0; y < height; y += step) {
+    for (let x = 0; x < width; x += step) {
+      const i = (y * width + x) * 4;
+      if (imageData.data[i + 3] > 128) {
+        pixels.push({ x, y });
+      }
+    }
+  }
+  return pixels;
+}
+
+class Particle {
+  constructor() {
+    this.x = Math.random() * width;
+    this.y = Math.random() * height;
+    this.vx = 0;
+    this.vy = 0;
+    this.targetX = this.x;
+    this.targetY = this.y;
+    this.size = Math.random() * 1.8 + 0.5;
+    this.friction = 0.92 + Math.random() * 0.04;
+    this.ease = 0.08 + Math.random() * 0.06;
+    this.paletteIndex = Math.floor(Math.random() * 3);
+  }
+
+  update() {
+    // Mouse repulsion
+    const dx = mouse.x - this.x;
+    const dy = mouse.y - this.y;
+    const dist = Math.sqrt(dx * dx + dy * dy);
+    if (dist < MOUSE_RADIUS) {
+      const force = (MOUSE_RADIUS - dist) / MOUSE_RADIUS;
+      this.vx -= (dx / dist) * force * 2.5;
+      this.vy -= (dy / dist) * force * 2.5;
+    }
+
+    // Move towards target
+    this.vx += (this.targetX - this.x) * this.ease;
+    this.vy += (this.targetY - this.y) * this.ease;
+
+    this.vx *= this.friction;
+    this.vy *= this.friction;
+
+    this.x += this.vx;
+    this.y += this.vy;
+  }
+
+  draw(ctx, palette) {
+    const speed = Math.sqrt(this.vx * this.vx + this.vy * this.vy);
+    const color = palette[this.paletteIndex % palette.length];
+    const alpha = Math.min(1, 0.3 + speed * 0.15);
+
+    ctx.beginPath();
+    ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
+    ctx.fillStyle = color;
+    ctx.globalAlpha = alpha;
+    ctx.fill();
+    ctx.globalAlpha = 1;
+
+    // Glow for faster particles
+    if (speed > 3) {
+      ctx.beginPath();
+      ctx.arc(this.x, this.y, this.size * 3, 0, Math.PI * 2);
+      ctx.fillStyle = color;
+      ctx.globalAlpha = alpha * 0.15;
+      ctx.fill();
+      ctx.globalAlpha = 1;
+    }
+  }
+}
+
+// Initialize particles
+function initParticles() {
+  particles = [];
+  for (let i = 0; i < PARTICLE_COUNT; i++) {
+    particles.push(new Particle());
+  }
+}
+
+// Set targets from pixel positions
+function setTargets(pixelPositions) {
+  // Shuffle pixel positions for organic feel
+  const shuffled = [...pixelPositions].sort(() => Math.random() - 0.5);
+
+  for (let i = 0; i < particles.length; i++) {
+    if (i < shuffled.length) {
+      particles[i].targetX = shuffled[i].x;
+      particles[i].targetY = shuffled[i].y;
+    } else {
+      // Extra particles orbit around text
+      const angle = Math.random() * Math.PI * 2;
+      const radius = 80 + Math.random() * 120;
+      particles[i].targetX = width / 2 + Math.cos(angle) * radius;
+      particles[i].targetY = height / 2 + Math.sin(angle) * radius;
+    }
+  }
+}
+
+// Cache pixel positions for all words
+const wordPixels = [];
+let cacheReady = false;
+
+function cacheAllWords() {
+  for (let i = 0; i < WORDS.length; i++) {
+    wordPixels[i] = getTextPixels(WORDS[i]);
+  }
+  cacheReady = true;
+}
+
+// Mouse tracking
+canvas.addEventListener('mousemove', e => {
+  mouse.x = e.clientX;
+  mouse.y = e.clientY;
+});
+canvas.addEventListener('mouseleave', () => {
+  mouse.x = -9999;
+  mouse.y = -9999;
+});
+
+// Touch support
+canvas.addEventListener('touchmove', e => {
+  e.preventDefault();
+  mouse.x = e.touches[0].clientX;
+  mouse.y = e.touches[0].clientY;
+});
+canvas.addEventListener('touchend', () => {
+  mouse.x = -9999;
+  mouse.y = -9999;
+});
+
+// Animation loop
+function animate() {
+  ctx.fillStyle = 'rgba(5, 5, 8, 0.35)';
+  ctx.fillRect(0, 0, width, height);
+
+  if (!cacheReady) {
+    requestAnimationFrame(animate);
+    return;
+  }
+
+  // Morph timing
+  if (holdCounter < HOLD_DURATION) {
+    holdCounter++;
+  } else {
+    morphProgress += MORPH_SPEED;
+    if (morphProgress >= 1) {
+      morphProgress = 0;
+      holdCounter = 0;
+      currentWordIndex = nextWordIndex;
+      nextWordIndex = (nextWordIndex + 1) % WORDS.length;
+      setTargets(wordPixels[currentWordIndex]);
+    }
+  }
+
+  // Interpolate between words during morph
+  const currentPixels = wordPixels[currentWordIndex];
+  const nextPixels = wordPixels[nextWordIndex];
+
+  if (morphProgress > 0 && currentPixels && nextPixels) {
+    const mixed = [];
+    const maxLen = Math.max(currentPixels.length, nextPixels.length);
+    for (let i = 0; i < maxLen; i++) {
+      const p1 = currentPixels[Math.min(i, currentPixels.length - 1)];
+      const p2 = nextPixels[Math.min(i, nextPixels.length - 1)];
+      mixed.push({
+        x: p1.x + (p2.x - p1.x) * morphProgress,
+        y: p1.y + (p2.y - p1.y) * morphProgress
+      });
+    }
+    setTargets(mixed);
+  } else if (currentPixels) {
+    setTargets(currentPixels);
+  }
+
+  const palette = PALETTES[currentWordIndex];
+
+  particles.forEach(p => {
+    p.update();
+    p.draw(ctx, palette);
+  });
+
+  // Subtle scanline overlay
+  ctx.fillStyle = 'rgba(255,255,255,0.02)';
+  for (let y = 0; y < height; y += 4) {
+    ctx.fillRect(0, y, width, 1);
+  }
+
+  requestAnimationFrame(animate);
+}
+
+// Start
+initParticles();
+// Small delay to ensure font metrics settle
+cacheAllWords();
+setTargets(wordPixels[0]);
+animate();
+
+// Re-cache on resize
+window.addEventListener('resize', () => {
+  resize();
+  cacheAllWords();
+  currentWordIndex = 0;
+  nextWordIndex = 1;
+  morphProgress = 0;
+  holdCounter = 0;
+  setTargets(wordPixels[0]);
+});
+</script>
+</body>
+</html>
